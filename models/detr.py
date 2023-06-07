@@ -33,7 +33,7 @@ class DETR(nn.Module):
         super().__init__()
         self.num_queries = num_queries
         self.transformer = transformer
-        hidden_dim = transformer.d_model
+        hidden_dim = transformer.d_model  # 256
         self.class_embed = nn.Linear(hidden_dim, num_classes + 1)
         self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
@@ -58,14 +58,23 @@ class DETR(nn.Module):
         """
         if isinstance(samples, (list, torch.Tensor)):
             samples = nested_tensor_from_tensor_list(samples)
+
+        # features: list of NestedTensor
+        # pos: list of Tensor
         features, pos = self.backbone(samples)
 
+        # src: [B, 2048, H', W']
+        # mask: [B, H', W']
         src, mask = features[-1].decompose()
         assert mask is not None
-        hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
 
-        outputs_class = self.class_embed(hs)
-        outputs_coord = self.bbox_embed(hs).sigmoid()
+        # self.input_proj(src): [B, 256, H', W']
+        # self.query_embed.weight: [100, 256]
+        # pos[-1]: [B, 256, H', W']
+        hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]  # [6, B, 100, 256]
+
+        outputs_class = self.class_embed(hs)  # [6, B, 100, 92]
+        outputs_coord = self.bbox_embed(hs).sigmoid()  # [6, B, 100, 4]
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
         if self.aux_loss:
             out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
